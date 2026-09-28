@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Brochure</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#151515;font-family:Arial,sans-serif}
+body{display:flex;flex-direction:column}
+header{height:52px;flex:0 0 52px;display:flex;align-items:center;justify-content:center;color:#fff;background:#101010;font-size:19px}
+.stage{position:relative;flex:1;min-height:0;display:flex;align-items:center;justify-content:center;padding:12px 58px;perspective:2200px}
+.book{position:relative;width:min(86vw,86vh);height:min(86vw,86vh);max-width:900px;max-height:calc(100vh - 105px)}
+.sheet{position:absolute;inset:0;transform-origin:left center;transform-style:preserve-3d;transition:transform .72s cubic-bezier(.22,.72,.2,1);background:#fff;box-shadow:0 10px 35px rgba(0,0,0,.45);backface-visibility:hidden}
+.sheet.flipped{transform:rotateY(-180deg)}
+.face{position:absolute;inset:0;background:#fff;backface-visibility:hidden;overflow:hidden}
+.face.back{transform:rotateY(180deg)}
+canvas{display:block;width:100%;height:100%;object-fit:contain}
+.nav{position:absolute;top:50%;transform:translateY(-50%);z-index:100;width:48px;height:68px;border:0;border-radius:9px;background:rgba(0,0,0,.52);color:#fff;font-size:48px;line-height:1;cursor:pointer}
+.nav:hover{background:rgba(0,0,0,.78)}
+.nav:disabled{opacity:.18;cursor:default}
+#prev{left:8px}#next{right:8px}
+footer{height:42px;flex:0 0 42px;display:flex;align-items:center;justify-content:center;gap:16px;color:#fff;background:#101010;font-size:13px}
+#full{border:0;background:none;color:#fff;font-size:19px;cursor:pointer}
+#loading{position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;background:#151515;color:#fff}
+#loading.hide{display:none}
+@media(max-width:600px){
+header{height:45px;flex-basis:45px;font-size:17px}
+.stage{padding:6px 40px}
+.book{width:calc(100vw - 52px);height:calc(100vw - 52px)}
+.nav{width:34px;height:54px;font-size:35px}
+#prev{left:3px}#next{right:3px}
+footer{height:35px;flex-basis:35px}
+}
+</style>
+</head>
+<body>
+<div id="loading">Caricamento brochure…</div>
+<header>Brochure</header>
+<section class="stage">
+  <button class="nav" id="prev" aria-label="Pagina precedente">‹</button>
+  <div class="book" id="book"></div>
+  <button class="nav" id="next" aria-label="Pagina successiva">›</button>
+</section>
+<footer>
+  <span id="counter">Pagina 1 / 13</span>
+  <button id="full" aria-label="Schermo intero">⛶</button>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+const PDF = "brochure.pdf";
+const book = document.getElementById("book");
+const counter = document.getElementById("counter");
+const loading = document.getElementById("loading");
+const prev = document.getElementById("prev");
+const next = document.getElementById("next");
+
+let pdf, pages=[], current=0, busy=false;
+
+async function makeFace(n){
+  const p = await pdf.getPage(n);
+  const base = p.getViewport({scale:1});
+  const target = 1500;
+  const scale = target / Math.max(base.width, base.height);
+  const vp = p.getViewport({scale});
+  const c = document.createElement("canvas");
+  c.width=Math.ceil(vp.width); c.height=Math.ceil(vp.height);
+  await p.render({canvasContext:c.getContext("2d"),viewport:vp}).promise;
+  const face=document.createElement("div");
+  face.className="face";
+  face.appendChild(c);
+  return face;
+}
+
+async function build(){
+  pdf=await pdfjsLib.getDocument(PDF).promise;
+  for(let i=1;i<=pdf.numPages;i++){
+    const sheet=document.createElement("div");
+    sheet.className="sheet";
+    const front=document.createElement("div");
+    front.className="face front";
+    const f=await makeFace(i);
+    front.replaceChildren(f.firstChild);
+    sheet.appendChild(front);
+    // The back is deliberately empty: one visible page at a time.
+    const back=document.createElement("div");
+    back.className="face back";
+    sheet.appendChild(back);
+    sheet.style.zIndex=String(pdf.numPages-i+1);
+    book.appendChild(sheet);
+    pages.push(sheet);
+  }
+  loading.classList.add("hide");
+  update();
+}
+
+function update(){
+  counter.textContent=`Pagina ${current+1} / ${pages.length}`;
+  prev.disabled=current===0 || busy;
+  next.disabled=current===pages.length-1 || busy;
+}
+
+function forward(){
+  if(busy || current>=pages.length-1)return;
+  busy=true; update();
+  pages[current].classList.add("flipped");
+  setTimeout(()=>{current++;busy=false;update()},720);
+}
+function backward(){
+  if(busy || current<=0)return;
+  busy=true; update();
+  current--;
+  pages[current].classList.remove("flipped");
+  setTimeout(()=>{busy=false;update()},720);
+}
+
+next.onclick=forward; prev.onclick=backward;
+document.addEventListener("keydown",e=>{
+  if(e.key==="ArrowRight")forward();
+  if(e.key==="ArrowLeft")backward();
+});
+let sx=0;
+document.addEventListener("touchstart",e=>sx=e.changedTouches[0].clientX,{passive:true});
+document.addEventListener("touchend",e=>{
+  const dx=e.changedTouches[0].clientX-sx;
+  if(Math.abs(dx)>45)(dx<0?forward:backward)();
+},{passive:true});
+document.getElementById("full").onclick=async()=>{
+  try{
+    if(!document.fullscreenElement)await document.documentElement.requestFullscreen();
+    else await document.exitFullscreen();
+  }catch(e){}
+};
+build().catch(err=>{
+  loading.textContent="Errore: assicurati che brochure.pdf sia nella stessa cartella di index.html.";
+  console.error(err);
+});
+</script>
+</body>
+</html>
