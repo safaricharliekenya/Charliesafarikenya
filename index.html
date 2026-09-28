@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Brochure — Safari Charlie Kenya</title>
+
+<!-- PDF.js: usato per leggere le pagine del PDF direttamente nel browser -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+<style>
+*{box-sizing:border-box}
+html,body{
+  margin:0;width:100%;height:100%;overflow:hidden;
+  background:#171717;font-family:Arial,sans-serif;
+}
+body{display:flex;flex-direction:column}
+
+header{
+  height:58px;flex:0 0 58px;
+  display:flex;align-items:center;justify-content:center;
+  color:#fff;background:#111;font-size:20px;
+  letter-spacing:.4px;
+}
+
+.stage{
+  position:relative;flex:1;min-height:0;
+  display:flex;align-items:center;justify-content:center;
+  padding:15px 60px;
+  perspective:1800px;
+}
+
+.book{
+  position:relative;
+  width:min(82vw,82vh);
+  aspect-ratio:1/1;
+  max-width:900px;
+  max-height:calc(100vh - 120px);
+}
+
+.page{
+  position:absolute;inset:0;
+  width:100%;height:100%;
+  background:#fff;
+  transform-origin:left center;
+  transform-style:preserve-3d;
+  backface-visibility:hidden;
+  box-shadow:0 8px 28px rgba(0,0,0,.4);
+  transition:transform .65s cubic-bezier(.2,.7,.2,1);
+  overflow:hidden;
+}
+
+.page canvas{
+  width:100%;height:100%;
+  display:block;
+}
+
+.page.turn{
+  transform:rotateY(-180deg);
+}
+
+.page.previous{
+  transform:rotateY(0deg);
+}
+
+.page::after{
+  content:"";
+  position:absolute;inset:0;
+  pointer-events:none;
+  background:linear-gradient(90deg,rgba(0,0,0,.12),transparent 18%,transparent 82%,rgba(0,0,0,.05));
+}
+
+.nav{
+  position:absolute;
+  top:50%;transform:translateY(-50%);
+  width:48px;height:72px;
+  border:0;border-radius:9px;
+  background:rgba(0,0,0,.5);
+  color:#fff;font-size:48px;
+  line-height:1;cursor:pointer;z-index:50;
+}
+.nav:hover{background:rgba(0,0,0,.75)}
+.nav:disabled{opacity:.2;cursor:default}
+#prev{left:8px}
+#next{right:8px}
+
+footer{
+  height:45px;flex:0 0 45px;
+  display:flex;align-items:center;justify-content:center;
+  gap:16px;background:#111;color:#fff;
+  font-size:14px;
+}
+
+#fullscreen{
+  border:0;background:transparent;color:#fff;
+  font-size:19px;cursor:pointer;
+}
+
+.loading{
+  position:absolute;inset:0;
+  display:flex;align-items:center;justify-content:center;
+  color:#fff;background:#171717;z-index:100;
+}
+.loading.hidden{display:none}
+
+@media(max-width:600px){
+  header{height:48px;flex-basis:48px;font-size:17px}
+  .stage{padding:8px 42px}
+  .book{width:calc(100vw - 55px);height:calc(100vw - 55px)}
+  .nav{width:35px;height:56px;font-size:35px}
+  #prev{left:3px}#next{right:3px}
+  footer{height:38px;flex-basis:38px}
+}
+</style>
+</head>
+
+<body>
+
+<header>Brochure</header>
+
+<div class="stage">
+  <div class="loading" id="loading">Caricamento brochure…</div>
+
+  <button class="nav" id="prev" aria-label="Pagina precedente">‹</button>
+
+  <div class="book" id="book"></div>
+
+  <button class="nav" id="next" aria-label="Pagina successiva">›</button>
+</div>
+
+<footer>
+  <span id="counter">Pagina 1 / 13</span>
+  <button id="fullscreen" title="Schermo intero">⛶</button>
+</footer>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+const PDF_FILE = "brochure.pdf";
+const book = document.getElementById("book");
+const loading = document.getElementById("loading");
+const counter = document.getElementById("counter");
+const prev = document.getElementById("prev");
+const next = document.getElementById("next");
+
+let pdf = null;
+let current = 0;
+let pages = [];
+let busy = false;
+
+async function renderPage(pageNumber){
+  const pdfPage = await pdf.getPage(pageNumber);
+
+  const viewport0 = pdfPage.getViewport({scale:1});
+  const scale = 1400 / Math.max(viewport0.width, viewport0.height);
+  const viewport = pdfPage.getViewport({scale});
+
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.ceil(viewport.width);
+  canvas.height = Math.ceil(viewport.height);
+
+  await pdfPage.render({
+    canvasContext: canvas.getContext("2d"),
+    viewport
+  }).promise;
+
+  const page = document.createElement("div");
+  page.className = "page";
+  page.dataset.number = pageNumber;
+  page.appendChild(canvas);
+  book.appendChild(page);
+
+  pages.push(page);
+}
+
+function update(){
+  counter.textContent = `Pagina ${current + 1} / ${pages.length}`;
+  prev.disabled = current === 0 || busy;
+  next.disabled = current === pages.length - 1 || busy;
+}
+
+async function goNext(){
+  if(busy || current >= pages.length - 1) return;
+  busy = true;
+  update();
+
+  pages[current].classList.add("turn");
+
+  setTimeout(()=>{
+    current++;
+    busy=false;
+    update();
+  },650);
+}
+
+async function goPrev(){
+  if(busy || current <= 0) return;
+  busy=true;
+  update();
+
+  current--;
+  pages[current].classList.remove("turn");
+
+  setTimeout(()=>{
+    busy=false;
+    update();
+  },650);
+}
+
+prev.onclick=goPrev;
+next.onclick=goNext;
+
+document.addEventListener("keydown",e=>{
+  if(e.key==="ArrowRight") goNext();
+  if(e.key==="ArrowLeft") goPrev();
+});
+
+let touchX=0;
+document.addEventListener("touchstart",e=>{
+  touchX=e.changedTouches[0].clientX;
+},{passive:true});
+
+document.addEventListener("touchend",e=>{
+  const dx=e.changedTouches[0].clientX-touchX;
+  if(Math.abs(dx)<45) return;
+  if(dx<0) goNext();
+  else goPrev();
+},{passive:true});
+
+document.getElementById("fullscreen").onclick=async()=>{
+  try{
+    if(!document.fullscreenElement) await document.documentElement.requestFullscreen();
+    else await document.exitFullscreen();
+  }catch(e){}
+};
+
+async function init(){
+  try{
+    pdf=await pdfjsLib.getDocument(PDF_FILE).promise;
+
+    for(let i=1;i<=pdf.numPages;i++){
+      await renderPage(i);
+    }
+
+    loading.classList.add("hidden");
+    update();
+  }catch(error){
+    loading.textContent=
+      "Impossibile caricare brochure.pdf. Verifica che sia nella stessa cartella di index.html.";
+    console.error(error);
+  }
+}
+
+init();
+</script>
+</body>
+</html>
